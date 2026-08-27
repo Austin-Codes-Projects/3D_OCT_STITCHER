@@ -1,0 +1,9 @@
+*.npz
+*.ply
+/data/
+/felsenbein_2311/
+/accuracy_matrices.ipynb
+/create_colored_oct_slices.ipynb
+/.idea/
+__pycache__/
+.DS_Store
