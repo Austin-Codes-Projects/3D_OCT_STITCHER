@@ -28,10 +28,11 @@ def scan_key(path):
 
 
 def choose_scans(available):
-    """Choose every scan or confirm individual scans until a requested count."""
+    """Choose scans to clean, requiring two or more only when stitching."""
     while True:
         requested = ask(
-            f"How many scans should be stitched? Enter all for every available scan ({len(available)})",
+            "How many scans should be manually cleaned in Napari? "
+            f"Enter all for every available scan ({len(available)}; selecting one saves only its cleaned copy)",
             "all",
         ).lower()
         if requested in {"all", "total"}:
@@ -41,8 +42,8 @@ def choose_scans(available):
         except ValueError:
             print("Enter a whole number of scans, or all.")
             continue
-        if not 2 <= count <= len(available):
-            print(f"Choose between 2 and {len(available)} scans, or all.")
+        if not 1 <= count <= len(available):
+            print(f"Choose between 1 and {len(available)} scans, or all.")
             continue
 
         chosen = []
@@ -75,13 +76,32 @@ def main():
     print("=" * 68)
     input_dir = Path(ask("Folder containing vol1.npy/vol1.npz, vol2..., etc.", "scans"))
     available_scans = sorted([path for path in input_dir.iterdir() if scan_key(path) is not None], key=scan_key)
-    if len(available_scans) < 2:
-        raise SystemExit("Need at least two files named vol<number>.npy or vol<number>.npz")
+    if not available_scans:
+        raise SystemExit("Need at least one file named vol<number>.npy or vol<number>.npz")
     print(f"Found {len(available_scans)} available scans: " + ", ".join(path.name for path in available_scans))
     scans = choose_scans(available_scans)
     print(f"Selected {len(scans)} scans: " + ", ".join(path.name for path in scans))
     output_dir = Path(ask("Output folder", "results/final_stitch"))
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Keep the acquired scans intact. Napari saves the voxel cleanup to a
+    # selection-specific copy, which becomes the input for alignment/export.
+    selection_name = "_".join(path.stem for path in scans)
+    cleaned_volume_dir = output_dir / "cleaned_volumes" / selection_name
+    cleaned_volume_dir.mkdir(parents=True, exist_ok=True)
+    cleaned_scans = [cleaned_volume_dir / scan.name for scan in scans]
+    existing_cleaned = [path for path in cleaned_scans if path.is_file()]
+    if len(existing_cleaned) == len(cleaned_scans) and ask(
+        "Reuse the existing cleaned scans for this selection? (y/n)", "y"
+    ).lower().startswith("y"):
+        print("Reusing cleaned scans: " + ", ".join(path.name for path in cleaned_scans))
+    else:
+        if existing_cleaned:
+            print("Existing cleaned scans will be replaced: " + ", ".join(path.name for path in existing_cleaned))
+        print("\nNapari applies the visible background floor, contrast limits, and gamma to the saved volume by default. Enable the depth-band mask and narrow it to the panel surface to remove unwanted depth layers before saving.")
+        for scan, cleaned_scan in zip(scans, cleaned_scans):
+            run("napari_visualization.py", "--input", scan, "--output", cleaned_scan)
+
     scale = ask("Volume downsample factor (must stay the same for manual placement and PLY export; normally 4)", "4")
     try:
         scale_value = int(scale)
@@ -89,6 +109,28 @@ def main():
             raise ValueError
     except ValueError:
         raise SystemExit("Scale must be a positive integer")
+
+    if len(scans) == 1:
+        # A one-scan run has no alignment or stitching to perform.  Export the
+        # manually cleaned Napari copy directly to the same cleaned-PLY layout
+        # used by multi-scan runs.
+        raw_ply = output_dir / "individual_raw_ply" / selection_name
+        clean_ply = output_dir / "individual_clean_ply" / selection_name
+        run("export_scans_to_ply.py", "--input-dir", cleaned_volume_dir,
+            "--output-dir", raw_ply, "--scale", scale_value, "--smooth", 0,
+            "--volumes", cleaned_scans[0])
+        region = ask(
+            "Optional extra PLY corner-artifact region (type none to keep the Napari result exactly)",
+            "none",
+        )
+        source = raw_ply / f"{scans[0].stem}.ply"
+        args = ["--input", source, "--output", clean_ply / source.name]
+        if region.lower() != "none":
+            args.extend(["--remove-region", region])
+        run("clean_ply_panels.py", *args)
+        print(f"\nFinished cleaning. Open: {clean_ply / source.name}")
+        return
+
     scale_vector = f"{scale_value},{scale_value},{scale_value}"
     view_scale = ask(
         "Manual alignment view downsample factor (does not reduce final PLY detail; normally 4)",
@@ -122,23 +164,25 @@ def main():
             if not reference.is_file():
                 raise SystemExit(f"Reference volume not found: {reference}")
             print("\nA manual-alignment window opens for every scan. Align green scan features to the magenta reference, Save offset, then close the window.")
-            for scan in scans:
+            for scan in cleaned_scans:
                 run("manual_reference_alignment.py", "--volume", scan, "--reference", reference,
                     "--scale", view_scale_value, "--transform-scale", scale_value, "--offsets", offsets)
         else:
             print("\nBlank-canvas placement: the manual movement window opens for vol1 at global offset (0, 0, 0). After you Save offset and close that window, every later scan opens over a magenta composite of all previously saved scans, with its sliders initialized to the prior scan's global offset. Adjust from there, Save offset, then close the window to continue.")
-            for index, scan in enumerate(scans):
+            for index, scan in enumerate(cleaned_scans):
                 args = ["--volume", scan, "--scale", view_scale_value,
                         "--transform-scale", scale_value, "--offsets", offsets]
                 if index:
-                    args.extend(["--background-volumes", *scans[:index]])
+                    args.extend(["--background-volumes", *cleaned_scans[:index]])
                 run("manual_reference_alignment.py", *args)
         position_file = offsets
 
-    run("export_scans_to_ply.py", "--input-dir", input_dir, "--output-dir", raw_ply,
-        "--scale", scale_value, "--volumes", *scans)
-    region = ask("Corner artifact region to remove (Enter uses reference-cleaned rule; type none to skip)",
-                 "y:1890:max,x:min:713")
+    run("export_scans_to_ply.py", "--input-dir", cleaned_volume_dir, "--output-dir", raw_ply,
+        "--scale", scale_value, "--oct-pose-clean", "--volumes", *cleaned_scans)
+    region = ask(
+        "Optional extra PLY corner-artifact region (type none to keep the Napari result exactly)",
+        "none",
+    )
     for scan in scans:
         source = raw_ply / f"{scan.stem}.ply"
         args = ["--input", source, "--output", clean_ply / source.name]
@@ -151,9 +195,18 @@ def main():
         run("manual_offsets_to_transforms.py", "--input-dir", clean_ply, "--offsets", position_file, "--output", manual_pairwise)
     else:
         run("positions_to_pairwise_transforms.py", "--input", position_file, "--scan-count", len(scans), "--output", manual_pairwise)
-    panel_transforms = output_dir / "first_panel_reference_transforms.npy"
-    run("align_first_panel_transforms.py", "--input-dir", clean_ply, "--initial-transforms", manual_pairwise,
-        "--output", panel_transforms, "--axis", "x", "--coordinate-scale", scale_vector)
+    refine_panels = ask(
+        "Refine alignment using broad X panels when they are present? (y/n)",
+        "n",
+    ).lower().startswith("y")
+    if refine_panels:
+        panel_transforms = output_dir / "first_panel_reference_transforms.npy"
+        run("align_first_panel_transforms.py", "--input-dir", clean_ply, "--initial-transforms", manual_pairwise,
+            "--output", panel_transforms, "--axis", "x", "--coordinate-scale", scale_vector)
+    else:
+        # Manual/reference transforms remain valid even when cleanup removed
+        # the broad planar feature required by the optional refinement step.
+        panel_transforms = manual_pairwise
     merge_distance = ask("Overlap merge distance in PLY units (1 is conservative; 0 disables)", "1")
     try:
         float(merge_distance)

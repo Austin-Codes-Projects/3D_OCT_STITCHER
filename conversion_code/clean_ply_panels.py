@@ -159,7 +159,12 @@ def main():
             values = vertices[:, AXES[axis_name]]
             low, high = resolve_bound(values, low), resolve_bound(values, high)
             if low > high:
-                parser.error(f"region lower bound exceeds upper bound for {axis_name}")
+                # A fixed cleanup region may not overlap a smaller scan (for
+                # example y:1890:max when its maximum Y is below 1890).  It
+                # simply selects no vertices and must not stop the pipeline.
+                description.append(f"{axis_name}=outside mesh")
+                matches = np.zeros(len(vertices), dtype=bool)
+                break
             matches &= (values >= low) & (values <= high)
             description.append(f"{axis_name}={low:g}..{high:g}")
         newly_removed = np.count_nonzero(matches & ~remove)

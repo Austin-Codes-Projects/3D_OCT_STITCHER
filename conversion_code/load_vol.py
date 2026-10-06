@@ -10,7 +10,9 @@ import numpy as np
 
 def load_volume(filename: str, scale: int = 2):
     """Load a .npy or single-array .npz volume and remove extra dimensions."""
-    loaded = np.load(filename)
+    # Raw OCT arrays are several gigabytes.  Mapping .npy input prevents the
+    # full acquisition from being copied into RAM before downsampling.
+    loaded = np.load(filename, mmap_mode="r" if str(filename).lower().endswith(".npy") else None)
     if isinstance(loaded, np.lib.npyio.NpzFile):
         keys = list(loaded.files)
         preferred = next((key for key in ("volume", "stitched", "arr_0") if key in keys), None)

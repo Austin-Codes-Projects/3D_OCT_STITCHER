@@ -11,6 +11,7 @@ from pathlib import Path
 
 from imes4d.mesh_export import export_volume_as_ply
 from load_vol import load_volume
+from oct_pose_preprocessing import prepare_volume
 
 
 def volume_key(path):
@@ -40,6 +41,8 @@ def main():
     parser.add_argument("--smooth", type=float, default=1.0)
     parser.add_argument("--mesh-step", type=int, default=1)
     parser.add_argument("--spacing", type=parse_spacing, default=(1, 1, 1), help="physical Z,Y,X voxel spacing")
+    parser.add_argument("--oct-pose-clean", action="store_true",
+                        help="window intensities, median-filter speckle, and suppress near-black signal before meshing")
     args = parser.parse_args()
 
     if args.scale < 1:
@@ -60,6 +63,9 @@ def main():
     spacing = tuple(value * args.scale for value in args.spacing)
     for source in files:
         volume = load_volume(source, args.scale)
+        if args.oct_pose_clean:
+            volume, (black, white) = prepare_volume(volume)
+            print(f"{source.name}: OCT cleanup window {black:g}..{white:g}")
         maximum = volume.max()
         if maximum <= 0:
             print(f"Skipping {source}: no positive voxels")
