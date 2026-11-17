@@ -5,9 +5,9 @@
 ## Rotational Object Scanner Designs
 
 <p align="center">
-  <img src="Rotational_Arm_Scanner/Scan1.png" width="30%" alt="Scan 1">
-  <img src="Rotational_Arm_Scanner/Scan2.png" width="30%" alt="Scan 2">
-  <img src="Rotational_Arm_Scanner/Scan3.png" width="30%" alt="Scan 3">
+  <img src="Rotational_Arm_Scanner/Scan1.png" width="50%" alt="Scan 1">
+  <img src="Rotational_Arm_Scanner/Scan2.png" width="50%"   alt="Scan 2">
+  <img src="Rotational_Arm_Scanner/Scan3.png" width="50%" alt="Scan 3">
 </p>
 
 Interactive tools for cleaning, aligning, and stitching OCT scans named
