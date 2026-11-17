@@ -1,5 +1,13 @@
 # 3D OCT Stitcher
 
+
+
+## Rotational Object Scanner Designs
+
+![Scan 1](Rotational_Arm_Scanner/Scan1.png)
+![Scan 2](Rotational_Arm_Scanner/Scan2.png)
+![Scan 3](Rotational_Arm_Scanner/Scan3.png)
+
 Interactive tools for cleaning, aligning, and stitching OCT scans named
 `vol1.npy`, `vol2.npy`, … (single-volume `.npz` inputs are also supported by
 the alignment and cleanup tools). The main pipeline now produces a stitched
